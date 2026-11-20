@@ -111,7 +111,7 @@ internal sealed class FakeModbusServer : IAsyncDisposable
         _cts.Dispose();
     }
 
-    /// <summary>The raw registers behind the provided pv_output.json sample.</summary>
+    /// <summary>The raw registers behind Fixtures/expected-payload.json.</summary>
     public static FakeModbusServer WithSampleInverter()
     {
         var s = new FakeModbusServer();

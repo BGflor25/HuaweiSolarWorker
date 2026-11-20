@@ -9,7 +9,7 @@ public sealed class PvApiClient(HttpClient http, IOptions<InverterOptions> optio
 {
     public async Task<HttpStatusCode> PostAsync(JsonObject payload, CancellationToken ct)
     {
-        // Buffered body with Content-Length (like the old curl call), not chunked streaming.
+        // Buffered body with Content-Length, not chunked streaming.
         using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
         using var response = await http.PostAsync(options.Value.ApiUrl, content, ct);
         if (!response.IsSuccessStatusCode)

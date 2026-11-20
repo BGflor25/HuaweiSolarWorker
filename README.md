@@ -1,98 +1,174 @@
-# HuaweiSolar worker
+# HuaweiSolar Worker
 
-.NET 10 background service that reads a Huawei SUN2000 inverter (with LUNA2000 battery) over Modbus TCP
-and POSTs the readings to the PV-installation API every 5 minutes. It replaces `run_pv_datacollector.sh` +
-`get_pv_data.py` (huawei_solar) + cron. The JSON payload has the same keys, order and values as the old
-`pv_output.json`.
+Read live data from your Huawei SUN2000 solar inverter (and LUNA2000 battery, if you have one) and send
+it to your own API every few minutes. That way you can keep a full history in your own time-series
+database, without depending on the FusionSolar cloud.
 
-## Deploy on the Raspberry Pi
-```bash
-uname -m                        # aarch64 expected (64-bit Pi OS)
-ping -c1 192.168.200.1          # the Pi must be connected to the inverter's Wi-Fi access point
+It runs as a small Docker container, for example on a Raspberry Pi.
 
-crontab -e                      # disable the run_pv_datacollector.sh line first (see Notes)
-docker compose pull             # latest image from ghcr.io
-docker compose up -d
-docker compose logs -f          # expect: "PV On-grid: active ... W, battery ... % ..., 32/32 registers -> HTTP 204"
+## How it works
+
+The inverter has its own Wi-Fi access point (`SUN2000-<serial>`). The worker connects to it, reads the
+values over Modbus TCP and POSTs them as JSON to an API on your home network.
+
+That means the device running the worker needs to be on **two networks at once**:
+
 ```
-Compare a few values with the last `pv_full_data.json` from the Python script. If they match, you can delete
-`get_pv_data.py`, `run_pv_datacollector.sh` and the `pv_*.json(l)` / `pv_full_pipeline.log` files.
+ Inverter Wi-Fi                     Raspberry Pi                      Home network
+ SUN2000-<serial>   ◄── Wi-Fi ───   wlan0          eth0  ─── LAN ──►  your API → time-series DB
+ 192.168.200.1                      (reads data)   (sends data)
+```
 
-Update later with `docker compose pull && docker compose up -d`. To build on the Pi itself instead of
-pulling, use `docker compose up -d --build`.
+- **Wi-Fi → the inverter**, to read the data. This network only reaches the inverter, not your LAN or the internet.
+- **Ethernet (or a second Wi-Fi adapter) → your home network**, to send the data to your API.
 
-Building on the Mac instead: `docker buildx build --platform linux/arm64 -t huaweisolar-worker src/HuaweiSolar.Worker`.
+## What you need
 
-## Published image
-`.github/workflows/docker-publish.yml` runs the tests and builds `ghcr.io/bgflor25/huaweisolarworker`
-for `linux/amd64` and `linux/arm64`:
-- push to `main` → tags `latest` and `sha-<commit>`
-- tag `vX.Y.Z` → tags `X.Y.Z` and `X.Y`
-- pull requests → build only, nothing published
+- A Huawei SUN2000 inverter with its Wi-Fi access point enabled
+- A Raspberry Pi (or any Linux box) with Wi-Fi **and** Ethernet, running a 64-bit OS
+- Docker
+- An HTTP endpoint on your network that accepts the JSON (see [What gets sent](#what-gets-sent))
 
-The image name comes from the GitHub repository name, so create the repo as `HuaweiSolarWorker`.
-If the package is private, log in on the Pi first with a token that has `read:packages`:
-`echo <token> | docker login ghcr.io -u BGflor25 --password-stdin`.
+## Setup
+
+### 1. Enable Modbus TCP on the inverter
+
+Open the FusionSolar app, connect to the inverter locally and go to
+**Settings → Communication configuration → Modbus TCP**. Set it to **Enable (unrestricted)**.
+
+### 2. Connect the Pi to your home network
+
+Plug in an Ethernet cable. This connection keeps the default route, so the Pi can reach your API and
+download Docker images.
+
+### 3. Connect the Pi's Wi-Fi to the inverter
+
+On Raspberry Pi OS (Bookworm):
+
+```bash
+sudo nmcli dev wifi connect "SUN2000-<serial>" password "<inverter Wi-Fi password>" ifname wlan0
+sudo nmcli con modify "SUN2000-<serial>" ipv4.never-default yes connection.autoconnect yes
+sudo nmcli con up "SUN2000-<serial>"
+```
+
+> **Don't skip `ipv4.never-default yes`.** Without it the Pi may route all its traffic through the
+> inverter's Wi-Fi, which goes nowhere, and your API becomes unreachable.
+
+Check that both sides work:
+
+```bash
+ping -c1 192.168.200.1          # the inverter
+ping -c1 <your API host>        # your home network
+ip route                        # "default via ... dev eth0"
+```
+
+### 4. Start the worker
+
+Install Docker if you don't have it yet:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER   # then log out and back in
+```
+
+Copy [`docker-compose.yml`](docker-compose.yml) to the Pi, set `Inverter__ApiUrl` to your API, and start it:
+
+```bash
+docker compose up -d
+docker compose logs -f
+```
+
+After a few seconds you should see something like:
+
+```
+PV On-grid: active 2150 W, battery 87.5 % (-300 W), today 12.4 kWh, 32/32 registers -> HTTP 204
+```
+
+The container starts again automatically after a reboot. To update to the latest version:
+
+```bash
+docker compose pull && docker compose up -d
+```
 
 ## Configuration
-`appsettings.json` → `Inverter` section, overridable with env vars:
 
-| Env var | Default | Was in the Python setup |
+Set these as environment variables in `docker-compose.yml`:
+
+| Variable | Default | Description |
 |---|---|---|
-| `Inverter__Host` | `192.168.200.1` | `INVERTER_HOST` |
-| `Inverter__Port` | `6607` | `INVERTER_PORT` |
-| `Inverter__UnitId` | `0` | huawei_solar default slave id (use `1` behind an SDongle on port 502) |
-| `Inverter__ApiUrl` | `http://192.168.20.157:8080/api/pvinstallation/upload` | curl URL in `run_pv_datacollector.sh` |
-| `Inverter__Interval` | `00:05:00` | cron schedule |
-| `Inverter__ConnectDelay` | `00:00:01` | – (the inverter ignores requests sent right after connecting) |
-| `Inverter__RequestTimeout` | `00:00:05` | – (connect and per-register timeout) |
-| `TZ` | `Europe/Brussels` (compose) | – |
+| `Inverter__ApiUrl` | – | **Required.** Where the readings are POSTed |
+| `Inverter__Host` | `192.168.200.1` | Inverter address |
+| `Inverter__Port` | `6607` | Modbus port. Use `502` if you connect through an SDongle |
+| `Inverter__UnitId` | `0` | Modbus unit id. Use `1` with an SDongle |
+| `Inverter__Interval` | `00:05:00` | How often to read |
+| `TZ` | `Europe/Brussels` | Time zone for the logs |
 
-`SNAPSHOT_FILE`, `HISTORY_FILE`, `API_PAYLOAD_FILE` and `LOG_FILE` are gone: the data goes straight to the
-API, and logs go to the console, where Docker rotates them (5 MB × 3).
+## What gets sent
 
-Set `Logging__LogLevel__HuaweiSolar.Worker.Huawei=Debug` to see which registers this model doesn't support.
+Every interval the worker POSTs one JSON object:
 
-## What is read
-Every register is read separately, so a register this model doesn't have only loses that value. Like
-before, a value that couldn't be read is sent as `{"value": null, "unit": null}`. A register that reports
-Huawei's "not available" marker (e.g. `active_grid_A_power` without a meter) is sent as `null` with its unit.
-
-| Key | Register | Type / gain | Unit |
-|---|---|---|---|
-| `model_name` / `serial_number` | 30000 / 30015 | string | |
-| `rated_power` | 30073 | U32 | W |
-| `input_power`, `active_power`, `reactive_power` | 32064, 32080, 32082 | I32 | W, W, var |
-| `power_factor` | 32084 | I16 / 1000 | |
-| `efficiency` | 32086 | U16 / 100 | % |
-| `internal_temperature` | 32087 | I16 / 10 | °C |
-| `device_status` | 32089 | status code → text (e.g. `On-grid`) | |
-| `day_active_power_peak` | 32078 | I32 | W |
-| `accumulated_yield_energy`, `daily_yield_energy` | 32106, 32114 | U32 / 100 | kWh |
-| `pv_01..04_voltage` / `_current` | 32016–32023 | I16 / 10, I16 / 100 | V, A |
-| `grid_voltage`, `grid_current`, `grid_frequency` | 32066, 32072, 32085 | U16 / 10, I32 / 1000, U16 / 100 | V, A, Hz |
-| `active_grid_A_current`, `active_grid_A_power`, `grid_A_voltage` | 37107, 37132, 37101 | I32 / 100, I32, I32 / 10 | A, W, V (power meter) |
-| `storage_state_of_capacity` | 37760 | U16 / 10 | % |
-| `storage_running_status` | 37762 | U16 (raw code) | |
-| `storage_charge_discharge_power` | 37765 | I32 | W |
-| `storage_total_charge`, `storage_total_discharge` | 37780, 37782 | U32 / 100 | kWh |
-
-The register list lives in `src/HuaweiSolar.Worker/Huawei/RegisterMap.cs`.
-
-## Local run
-```bash
-Inverter__Host=192.168.200.1 dotnet run --project src/HuaweiSolar.Worker
+```json
+{
+  "timestamp": 1763640000.123,
+  "model_name": { "value": "SUN2000-4.6KTL-L1", "unit": "" },
+  "active_power": { "value": 2150, "unit": "W" },
+  "daily_yield_energy": { "value": 12.4, "unit": "kWh" },
+  "storage_state_of_capacity": { "value": 87.5, "unit": "%" }
+}
 ```
 
-## Notes
-- The inverter accepts only one Modbus client at a time. Disable the cron job before starting the
-  container. Also close the FusionSolar app's local connection, or the two will compete.
-- If the worker logs `Connection refused` or timeouts, check that the Pi is still connected to the inverter's
-  Wi-Fi (`SUN2000-...`). The worker retries on the next interval.
-- `timestamp` is the Unix time of the reading in seconds, like Python's `time.time()`.
+`timestamp` is Unix time in seconds. Every key is always included. If a value isn't available, for
+example because you have no battery or power meter, it is sent as `null`, so your API should accept that.
 
-## Tests
-`dotnet test`. `tests/HuaweiSolar.Tests` runs an in-process fake Modbus server loaded with the raw registers
-behind the sample `pv_output.json` (`Fixtures/python-output.json`). It checks that the C# payload matches
-the Python output key for key. Other tests cover the register decoder and the Modbus client
-(exception responses, timeouts).
+<details>
+<summary>All fields</summary>
+
+| Field | Unit |
+|---|---|
+| `model_name`, `serial_number`, `device_status` | |
+| `rated_power`, `input_power`, `active_power`, `day_active_power_peak` | W |
+| `reactive_power` | var |
+| `power_factor` | |
+| `efficiency` | % |
+| `internal_temperature` | °C |
+| `accumulated_yield_energy`, `daily_yield_energy` | kWh |
+| `pv_01_voltage` … `pv_04_voltage` | V |
+| `pv_01_current` … `pv_04_current` | A |
+| `grid_voltage`, `grid_current`, `grid_frequency` | V, A, Hz |
+| `active_grid_A_current`, `active_grid_A_power`, `grid_A_voltage` (needs a power meter) | A, W, V |
+| `storage_state_of_capacity` (needs a battery) | % |
+| `storage_charge_discharge_power` | W |
+| `storage_running_status` | |
+| `storage_total_charge`, `storage_total_discharge` | kWh |
+
+The register addresses are in [`RegisterMap.cs`](src/HuaweiSolar.Worker/Huawei/RegisterMap.cs).
+</details>
+
+## Troubleshooting
+
+**Can't connect to the inverter (`Connection refused` / timeout)**
+Check that the Pi is still on the inverter's Wi-Fi (`ping 192.168.200.1`) and that Modbus TCP is enabled
+in the app. The worker simply tries again at the next interval.
+
+**Inverter works, but the API calls fail**
+Run `ip route`. The default route should go through `eth0`. If it goes through `wlan0`, repeat the
+`ipv4.never-default` step.
+
+**The Pi can reach both networks, but the container can't**
+Uncomment `network_mode: host` in `docker-compose.yml`.
+
+**Data stops while the FusionSolar app is open**
+The inverter allows only one Modbus connection at a time. Close the app's local connection.
+
+**Some values are always `null`**
+That model doesn't have those registers. Add `Logging__LogLevel__HuaweiSolar.Worker.Huawei: Debug` to see which ones.
+
+## Development
+
+```bash
+dotnet test                                      # runs against a built-in fake inverter
+dotnet run --project src/HuaweiSolar.Worker      # needs access to the inverter and your API
+```
+
+Docker images for `amd64` and `arm64` are published to `ghcr.io/bgflor25/huaweisolarworker` on every
+push to `main` (`latest`) and for every `vX.Y.Z` tag.

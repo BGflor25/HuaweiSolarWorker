@@ -1,15 +1,15 @@
 {
   "timestamp": 1795203904.5703242,
-  "model_name": { "value": "SUN2000-4.6KTL-L1", "unit": null },
-  "serial_number": { "value": "HV22B0338304", "unit": null },
+  "model_name": { "value": "SUN2000-4.6KTL-L1", "unit": "" },
+  "serial_number": { "value": "HV22B0338304", "unit": "" },
   "rated_power": { "value": 4600, "unit": "W" },
   "input_power": { "value": 0, "unit": "W" },
   "active_power": { "value": 0, "unit": "W" },
   "reactive_power": { "value": 1, "unit": "var" },
-  "power_factor": { "value": 0.0, "unit": null },
+  "power_factor": { "value": 0.0, "unit": "" },
   "efficiency": { "value": 100.0, "unit": "%" },
   "internal_temperature": { "value": 26.0, "unit": "°C" },
-  "device_status": { "value": "On-grid", "unit": null },
+  "device_status": { "value": "On-grid", "unit": "" },
   "day_active_power_peak": { "value": 2642, "unit": "W" },
   "accumulated_yield_energy": { "value": 15250.22, "unit": "kWh" },
   "daily_yield_energy": { "value": 1.18, "unit": "kWh" },
@@ -29,7 +29,7 @@
   "grid_A_voltage": { "value": 235.8, "unit": "V" },
   "storage_state_of_capacity": { "value": 5.0, "unit": "%" },
   "storage_charge_discharge_power": { "value": 0, "unit": "W" },
-  "storage_running_status": { "value": 2, "unit": null },
+  "storage_running_status": { "value": 2, "unit": "" },
   "storage_total_charge": { "value": 4406.96, "unit": "kWh" },
   "storage_total_discharge": { "value": 4335.95, "unit": "kWh" }
 }

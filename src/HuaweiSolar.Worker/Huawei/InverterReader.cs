@@ -19,7 +19,7 @@ public sealed class InverterReader(
         if (o.ConnectDelay > TimeSpan.Zero)
             await Task.Delay(o.ConnectDelay, _time, ct);
 
-        // Read one register at a time, like the Python script: a register this model doesn't
+        // Read one register at a time: a register this model doesn't
         // have only loses that value instead of failing the whole batch.
         var readings = new Dictionary<string, RegisterReading>();
         foreach (var def in RegisterMap.All)
