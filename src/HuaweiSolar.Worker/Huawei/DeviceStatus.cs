@@ -1,6 +1,6 @@
 namespace HuaweiSolar.Worker.Huawei;
 
-/// <summary>Register 32089 codes, same texts as the huawei_solar library.</summary>
+/// <summary>Register 32089 (device status) codes and their descriptions.</summary>
 public static class DeviceStatus
 {
     private static readonly Dictionary<ushort, string> Texts = new()

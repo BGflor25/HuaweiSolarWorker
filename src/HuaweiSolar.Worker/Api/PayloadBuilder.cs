@@ -8,7 +8,7 @@ public static class PayloadBuilder
     /// <summary>
     /// Builds the /api/pvinstallation/upload body: <c>timestamp</c> followed by every key of
     /// <see cref="RegisterMap"/> as <c>{"value", "unit"}</c>. Registers that could not be read
-    /// are sent as <c>{"value": null, "unit": null}</c>, exactly like build_api_payload in get_pv_data.py.
+    /// are sent with <c>"value": null</c>; <c>unit</c> is always a string (<c>""</c> when unitless).
     /// </summary>
     public static JsonObject Build(InverterSnapshot snapshot)
     {
@@ -25,7 +25,7 @@ public static class PayloadBuilder
                     string s => JsonValue.Create(s),
                     _ => null,
                 },
-                ["unit"] = reading?.Unit,
+                ["unit"] = reading?.Unit ?? def.Unit ?? "",
             };
         }
 

@@ -21,18 +21,18 @@ public class InverterReaderTests
         }),
         NullLogger<InverterReader>.Instance);
 
-    private static JsonObject Python() => JsonNode.Parse(Fixture.Read("python-output.json"))!.AsObject();
+    private static JsonObject ExpectedPayload() => JsonNode.Parse(Fixture.Read("expected-payload.json"))!.AsObject();
 
     [Fact]
-    public async Task Payload_matches_python_output_for_the_same_registers()
+    public async Task Payload_matches_expected_payload_for_the_sample_registers()
     {
         await using var server = FakeModbusServer.WithSampleInverter();
 
         var payload = PayloadBuilder.Build(await Reader(server).ReadAsync(default));
-        var python = Python();
+        var expectedPayload = ExpectedPayload();
 
-        Assert.Equal(python.Select(p => p.Key), payload.Select(p => p.Key));
-        foreach (var (key, expected) in python.Where(p => p.Key != "timestamp"))
+        Assert.Equal(expectedPayload.Select(p => p.Key), payload.Select(p => p.Key));
+        foreach (var (key, expected) in expectedPayload.Where(p => p.Key != "timestamp"))
         {
             Assert.True(JsonNode.DeepEquals(Normalize(expected), Normalize(payload[key])),
                 $"{key}: expected {expected?.ToJsonString()}, got {payload[key]?.ToJsonString()}");
@@ -40,7 +40,7 @@ public class InverterReaderTests
     }
 
     [Fact]
-    public async Task Missing_registers_are_sent_as_null_value_and_unit()
+    public async Task Missing_registers_are_sent_as_null_value_with_string_unit()
     {
         await using var server = FakeModbusServer.WithSampleInverter();
         foreach (ushort a in new ushort[] { 37760, 37765, 37766 })
@@ -50,8 +50,8 @@ public class InverterReaderTests
         var payload = PayloadBuilder.Build(snapshot);
 
         Assert.Equal(RegisterMap.All.Count - 2, snapshot.Readings.Count);
-        Assert.Equal("""{"value":null,"unit":null}""", payload["storage_state_of_capacity"]!.ToJsonString());
-        Assert.Equal("""{"value":null,"unit":null}""", payload["storage_charge_discharge_power"]!.ToJsonString());
+        Assert.Equal("""{"value":null,"unit":"%"}""", payload["storage_state_of_capacity"]!.ToJsonString());
+        Assert.Equal("""{"value":null,"unit":"W"}""", payload["storage_charge_discharge_power"]!.ToJsonString());
         Assert.Equal(26.0, payload["internal_temperature"]!["value"]!.GetValue<double>());
     }
 
@@ -85,7 +85,7 @@ public class InverterReaderTests
         await Assert.ThrowsAnyAsync<Exception>(() => reader.ReadAsync(default));
     }
 
-    // Python writes 26.0 / 0 while System.Text.Json writes 26 / 0; compare numerically.
+    // The fixture writes 26.0 / 0 while System.Text.Json writes 26 / 0; compare numerically.
     private static JsonNode? Normalize(JsonNode? node) => node switch
     {
         JsonValue v when v.GetValueKind() == JsonValueKind.Number =>

@@ -3,8 +3,7 @@ using static HuaweiSolar.Worker.Huawei.RegisterDefinition;
 namespace HuaweiSolar.Worker.Huawei;
 
 /// <summary>
-/// The registers the former get_pv_data.py read through the huawei_solar library, in the same
-/// order, with the same payload keys. Addresses, types and gains follow Huawei's
+/// The registers that are read, in payload order. Addresses, types and gains follow Huawei's
 /// "SUN2000 Modbus Interface Definitions". Not every register exists on every model;
 /// meter registers (371xx) need a smart power sensor, storage registers (377xx) a LUNA battery.
 /// </summary>

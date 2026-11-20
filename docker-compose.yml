@@ -6,7 +6,9 @@ services:
     build: ./src/HuaweiSolar.Worker
     container_name: huaweisolar
     restart: unless-stopped
-    # Outbound traffic to the inverter's Wi-Fi AP goes through the Pi's routing table.
+    # The Pi has two networks: Wi-Fi to the inverter's access point (192.168.200.x) and the
+    # local network with the API (192.168.20.x). The container's traffic follows the Pi's
+    # routing table, so both are reachable from the default bridge network.
     # If the container cannot reach 192.168.200.1, uncomment:
     # network_mode: host
     environment:
