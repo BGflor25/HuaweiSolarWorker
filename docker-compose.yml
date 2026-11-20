@@ -1,0 +1,23 @@
+services:
+  huaweisolar:
+    # Published by .github/workflows/docker-publish.yml. Use `docker compose build` with the
+    # build line below to build locally instead.
+    image: ghcr.io/bgflor25/huaweisolarworker:latest
+    build: ./src/HuaweiSolar.Worker
+    container_name: huaweisolar
+    restart: unless-stopped
+    # Outbound traffic to the inverter's Wi-Fi AP goes through the Pi's routing table.
+    # If the container cannot reach 192.168.200.1, uncomment:
+    # network_mode: host
+    environment:
+      Inverter__Host: 192.168.200.1
+      Inverter__Port: "6607"
+      Inverter__UnitId: "0"
+      Inverter__ApiUrl: http://192.168.20.157:8080/api/pvinstallation/upload
+      Inverter__Interval: "00:05:00"
+      TZ: Europe/Brussels
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
